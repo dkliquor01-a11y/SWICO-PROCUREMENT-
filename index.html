@@ -85,6 +85,72 @@ async function pwSave(){const rec=!$('pw0'),a=rec?'':$('pw0').value,b=$('pw1').v
  const{error}=await sb.auth.updateUser({password:b,data:{must_change_password:false}});if(error)return alert(error.message);FORCE=false;RECOVER=false;closeM();alert('Password changed.')}
 ['gesturestart','gesturechange','gestureend'].forEach(e=>document.addEventListener(e,x=>x.preventDefault()));
 document.addEventListener('touchmove',x=>{if(x.touches.length>1)x.preventDefault()},{passive:false});
+const LIBS={xlsx:['https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js','ExcelJS'],pdf:['https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js','jspdf'],at:['https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js','AT'],docx:['https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js','docx']};
+const loadLib=k=>new Promise((res,rej)=>{const[u,g]=LIBS[k];if(g==='AT'?(window.jspdf&&window.jspdf.jsPDF.API.autoTable):window[g])return res();const s=document.createElement('script');s.src=u;s.onload=res;s.onerror=()=>rej(new Error('Could not load the export tools. Check your internet connection.'));document.head.appendChild(s)});
+function saveBlob(b,name){const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
+function svgPng(svg,w=720){return new Promise(res=>{try{const cs=getComputedStyle(document.documentElement),vb=svg.viewBox.baseVal,h=Math.round(w*vb.height/vb.width),c0=svg.cloneNode(true);c0.setAttribute('width',vb.width);c0.setAttribute('height',vb.height);c0.setAttribute('xmlns','http://www.w3.org/2000/svg');c0.setAttribute('font-family','Helvetica, Arial, sans-serif');
+ const x=new XMLSerializer().serializeToString(c0).replace(/var\(--([a-z]+)\)/g,(m,n)=>cs.getPropertyValue('--'+n).trim()||'#000');
+ const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=w*2;c.height=h*2;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(img,0,0,c.width,c.height);res({url:c.toDataURL('image/png'),w,h})};img.onerror=()=>res(null);img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(x)}catch(e){res(null)}})}
+function repModel(){const root=$('rep'),M={title:'Report',cards:[],blocks:[]};const h=root.querySelector('h3');if(h)M.title=h.textContent.trim();
+ root.querySelectorAll(':scope > .grid .card').forEach(c=>M.cards.push([c.querySelector('.k').textContent.trim(),c.querySelector('.v').textContent.trim()]));
+ root.querySelectorAll(':scope > .card').forEach(c=>{const b=c.querySelector(':scope > b'),blk={title:b?b.textContent.trim():'',tables:[],svgs:[],notes:[]};
+  c.querySelectorAll('table').forEach(t=>{const rows=[...t.rows].map(r=>[...r.cells].map(x=>x.textContent.replace(/\s+/g,' ').trim()));if(rows.length)blk.tables.push({head:rows[0],rows:rows.slice(1)})});
+  c.querySelectorAll('svg').forEach(s=>blk.svgs.push(s));
+  c.querySelectorAll('.mu').forEach(n=>{if(!n.closest('table'))blk.notes.push(n.textContent.replace(/\s+/g,' ').trim())});M.blocks.push(blk)});return M}
+async function exportRep(kind){if(!kind)return;const M=repModel();M.meta='Generated '+today()+' by '+NAME+' ('+ROLES[ROLE]+') · Confidential: SWICO internal use';
+ const fn=(R.sec==='pr'?'Procurement':R.sec==='st'?'Stock':'Item')+'-report-'+String(R.sec==='it'?R.item:rLabel()).replace(/[^\w\-]+/g,'-');
+ try{alert('Preparing your '+({xlsx:'Excel',pdf:'PDF',docx:'Word'}[kind])+' report…');for(const b of M.blocks){b.imgs=[];for(const s of b.svgs){const p=await svgPng(s);if(p)b.imgs.push(p)}}
+  if(kind==='xlsx'){await loadLib('xlsx');await xlsxRep(M,fn)}else if(kind==='pdf'){await loadLib('pdf');await loadLib('at');pdfRep(M,fn)}else{await loadLib('docx');await docxRep(M,fn)}
+ }catch(e){alert('Export failed: '+(e.message||e))}}
+async function xlsxRep(M,fn){const wb=new ExcelJS.Workbook();wb.creator=NAME;wb.created=new Date();
+ const thin={style:'thin',color:{argb:'FFD9D6C9'}},bd={top:thin,left:thin,bottom:thin,right:thin};
+ const num=s=>/^-?\d{1,3}(,\d{3})+(\.\d+)?$|^-?\d+(\.\d+)?$/.test(s)?+s.replace(/,/g,''):s;
+ const hdr=row=>row.eachCell(c=>{c.font={bold:true,color:{argb:'FF1B1B18'}};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFC400'}};c.border=bd;c.alignment={vertical:'middle',wrapText:true}});
+ const put=(row,vals)=>{row.values=vals;row.eachCell(c=>{c.border=bd;c.alignment={vertical:'top',wrapText:true,horizontal:typeof c.value==='number'?'right':'left'};if(typeof c.value==='number')c.numFmt=Number.isInteger(c.value)?'#,##0':'#,##0.00'})};
+ const logo=wb.addImage({base64:LOGO,extension:'png'});
+ const ws=wb.addWorksheet('Summary',{views:[{showGridLines:false}]});ws.columns=[{width:40},{width:30},{width:14},{width:14},{width:14},{width:14}];
+ ws.addImage(logo,{tl:{col:0,row:0},ext:{width:178,height:84}});for(let i=1;i<=4;i++)ws.getRow(i).height=22;
+ ws.getCell('A6').value=M.title;ws.getCell('A6').font={bold:true,size:16};ws.getCell('A7').value=M.meta;ws.getCell('A7').font={size:9,color:{argb:'FF6C6C63'}};
+ let r=9;
+ if(M.cards.length){ws.getRow(r).values=['Key figures','Value'];hdr(ws.getRow(r));r++;M.cards.forEach(([k,v])=>{put(ws.getRow(r),[k,num(v)]);r++});r++}
+ const used={};let n=0;
+ for(const b of M.blocks){
+  if(b.imgs.length){ws.getCell('A'+r).value=b.title;ws.getCell('A'+r).font={bold:true};r++;for(const p of b.imgs){const w=520,h=Math.round(w*p.h/p.w);ws.addImage(wb.addImage({base64:p.url,extension:'png'}),{tl:{col:0,row:r-1},ext:{width:w,height:h}});r+=Math.ceil(h/20)+1}}
+  b.notes.filter(t=>!/^■/.test(t)).forEach(t=>{ws.getCell('A'+r).value=(b.title?b.title+': ':'')+t;ws.getCell('A'+r).font={size:9,color:{argb:'FF6C6C63'}};r++});
+  b.tables.forEach((t,ti)=>{let nm=((b.title||'Table')+(b.tables.length>1?' '+(ti+1):'')).replace(/[\\\/?*\[\]:]/g,' ').slice(0,28).trim()||'Table';if(used[nm.toLowerCase()])nm=nm.slice(0,24)+' '+(++n);used[nm.toLowerCase()]=1;
+   const s=wb.addWorksheet(nm,{views:[{state:'frozen',ySplit:3,showGridLines:false}]});
+   s.getCell('A1').value=b.title+' · '+M.title;s.getCell('A1').font={bold:true,size:13};
+   s.getRow(3).values=t.head;hdr(s.getRow(3));t.rows.forEach((row,i)=>put(s.getRow(4+i),row.map(num)));
+   s.columns=t.head.map((h,ci)=>({width:Math.min(45,Math.max(11,h.length+3,...t.rows.map(x=>String(x[ci]??'').length+2)))}));
+   if(t.rows.length)s.autoFilter={from:{row:3,column:1},to:{row:3+t.rows.length,column:t.head.length}}})}
+ const buf=await wb.xlsx.writeBuffer();saveBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),fn+'.xlsx')}
+const pt=s=>String(s??'').replace(/→/g,'->').replace(/[^\x20-\xFF\u2013\u2014\u2018\u2019\u201C\u201D\u2022\u2026]/g,'');
+function pdfRep(M,fn){const d=new window.jspdf.jsPDF({unit:'pt',format:'a4'}),W=d.internal.pageSize.getWidth(),H=d.internal.pageSize.getHeight(),m=40;let y=36;
+ d.addImage(LOGO,'PNG',m,y,110,52);y+=74;d.setFont('helvetica','bold').setFontSize(18).setTextColor(27,27,24);d.text(pt(M.title),m,y);y+=16;
+ d.setFont('helvetica','normal').setFontSize(8.5).setTextColor(110);d.text(pt(M.meta),m,y);y+=14;
+ const at=o=>{d.autoTable({margin:{left:m,right:m},...o});y=d.lastAutoTable.finalY+12};
+ if(M.cards.length){const rows=[];for(let i=0;i<M.cards.length;i+=2){const a=M.cards[i],b=M.cards[i+1]||['',''];rows.push([pt(a[0]),pt(a[1]),pt(b[0]),pt(b[1])])}
+  at({startY:y,body:rows,theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[217,214,201]},columnStyles:{0:{fillColor:[255,243,196],textColor:[80,70,20]},1:{fontStyle:'bold',halign:'right'},2:{fillColor:[255,243,196],textColor:[80,70,20]},3:{fontStyle:'bold',halign:'right'}}})}
+ for(const b of M.blocks){if(y>H-120){d.addPage();y=44}
+  if(b.title){d.setFont('helvetica','bold').setFontSize(11).setTextColor(27,27,24);d.text(pt(b.title),m,y);y+=8}
+  for(const p of b.imgs){const w=Math.min(W-2*m,470),h=w*p.h/p.w;if(y+h>H-50){d.addPage();y=44}d.addImage(p.url,'PNG',m,y,w,h);y+=h+8}
+  for(const t of b.tables)at({startY:y,head:[t.head.map(pt)],body:t.rows.map(r=>r.map(pt)),theme:'grid',headStyles:{fillColor:[255,196,0],textColor:[27,27,24]},styles:{fontSize:8.5,cellPadding:4,lineColor:[217,214,201]}});
+  d.setFont('helvetica','normal').setFontSize(8.5).setTextColor(110);for(const t of b.notes.filter(t=>!/^■/.test(t)))for(const ln of d.splitTextToSize(pt(t),W-2*m)){if(y>H-50){d.addPage();y=44}d.text(ln,m,y);y+=11}
+  y+=8}
+ const N=d.getNumberOfPages();for(let i=1;i<=N;i++){d.setPage(i);d.setFontSize(8).setTextColor(130);d.text('SWICO · ProcureTrack · Confidential',m,H-24);d.text('Page '+i+' of '+N,W-m,H-24,{align:'right'})}
+ d.save(fn+'.pdf')}
+async function docxRep(M,fn){const D=docx,bytes=u=>Uint8Array.from(atob(u.split(',')[1]),c=>c.charCodeAt(0));
+ const cell=(t,o={})=>new D.TableCell({shading:o.fill?{type:D.ShadingType.CLEAR,fill:o.fill,color:'auto'}:undefined,margins:{top:50,bottom:50,left:80,right:80},children:[new D.Paragraph({children:[new D.TextRun({text:String(t),bold:!!o.b,size:18})]})]});
+ const tbl=(head,rows)=>new D.Table({width:{size:100,type:D.WidthType.PERCENTAGE},rows:[new D.TableRow({tableHeader:true,children:head.map(h=>cell(h,{fill:'FFC400',b:true}))}),...rows.map(r=>new D.TableRow({children:head.map((_,i)=>cell(r[i]??''))}))]});
+ const P=(t,o={})=>new D.Paragraph({spacing:{before:o.before||60,after:60},heading:o.h,children:[new D.TextRun({text:t,bold:!!o.b,size:o.size||20,color:o.color})]});
+ const K=[new D.Paragraph({children:[new D.ImageRun({data:bytes(LOGO),transformation:{width:120,height:57}})]}),P(M.title,{h:D.HeadingLevel.HEADING_1,b:true,size:36}),P(M.meta,{size:16,color:'666666'})];
+ if(M.cards.length){K.push(P('Key figures',{h:D.HeadingLevel.HEADING_2,b:true,size:26}),tbl(['Measure','Value'],M.cards))}
+ for(const b of M.blocks){if(b.title)K.push(P(b.title,{h:D.HeadingLevel.HEADING_2,b:true,size:26,before:200}));
+  for(const p of b.imgs)K.push(new D.Paragraph({children:[new D.ImageRun({data:bytes(p.url),transformation:{width:520,height:Math.round(520*p.h/p.w)}})]}));
+  for(const t of b.tables){K.push(tbl(t.head,t.rows),P(''))}
+  for(const t of b.notes.filter(t=>!/^■/.test(t)))K.push(P(t,{size:16,color:'666666'}))}
+ const doc=new D.Document({creator:NAME,title:M.title,sections:[{footers:{default:new D.Footer({children:[new D.Paragraph({alignment:D.AlignmentType.CENTER,children:[new D.TextRun({text:'SWICO · ProcureTrack · Confidential · Page ',size:16}),new D.TextRun({children:[D.PageNumber.CURRENT],size:16})]})]})},children:K}]});
+ saveBlob(await D.Packer.toBlob(doc),fn+'.docx')}
 function showAuth(m){$('auth').style.display='flex';$('am').textContent=m||''}
 async function login(){$('am').textContent='';const{data,error}=await sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw').value});if(error)return $('am').textContent=error.message;enter(data.user)}
 async function forgot(){const e=$('em').value.trim();if(!e)return $('am').textContent='Enter your email first.';const{error}=await sb.auth.resetPasswordForEmail(e,{redirectTo:location.href.split('#')[0]});$('am').textContent=error?error.message:'Check your email for a reset link.'}
@@ -303,7 +369,7 @@ function repIT(){const names=allItemNames();if(!names.length)return '<p class="m
  <div class="card"><b>Issued by department (all time)</b>${hbar(Object.entries(dept),'wa')}</div>`}
 function vRep(){const o=(v,t,c)=>`<option value="${v}" ${c===v?'selected':''}>${t}</option>`,it=R.sec==='it';
  return `<div class="noprint"><div class="bar"><select onchange="R.sec=this.value;render()">${secOk('pr')?o('pr','Procurement',R.sec):''}${secOk('st')?o('st','Stock',R.sec):''}${o('it','Item accounts',R.sec)}</select>${it?'':`<select onchange="R.type=this.value;render()">${o('month','Monthly',R.type)}${o('quarter','Quarterly',R.type)}${o('year','Yearly',R.type)}</select>`}</div>
- <div class="bar">${it?`<select onchange="R.item=this.value;render()">${allItemNames().map(n=>`<option value="${esc(n)}" ${nk(n)===nk(R.item)?'selected':''}>${esc(n)}</option>`).join('')}</select>`:R.type==='month'?`<input type="month" value="${R.m}" onchange="R.m=this.value||R.m;render()">`:(R.type==='quarter'?`<select onchange="R.q=+this.value;render()">${[1,2,3,4].map(q=>o(q,'Q'+q,R.q)).join('')}</select>`:'')+`<input type="number" value="${R.y}" onchange="R.y=+this.value||R.y;render()">`}<button class="s" onclick="dlRep()">⬇ Save to print</button></div></div><div id="rep"><img src="${LOGO}" alt="SWICO" style="height:44px;display:block;margin:4px 0">${R.sec==='pr'?repPR():R.sec==='st'?repST():repIT()}</div>`}
+ <div class="bar">${it?`<select onchange="R.item=this.value;render()">${allItemNames().map(n=>`<option value="${esc(n)}" ${nk(n)===nk(R.item)?'selected':''}>${esc(n)}</option>`).join('')}</select>`:R.type==='month'?`<input type="month" value="${R.m}" onchange="R.m=this.value||R.m;render()">`:(R.type==='quarter'?`<select onchange="R.q=+this.value;render()">${[1,2,3,4].map(q=>o(q,'Q'+q,R.q)).join('')}</select>`:'')+`<input type="number" value="${R.y}" onchange="R.y=+this.value||R.y;render()">`}<select onchange="exportRep(this.value);this.value=''" aria-label="Export"><option value="">⬇ Export…</option><option value="xlsx">Excel (.xlsx)</option><option value="docx">Word (.docx)</option><option value="pdf">PDF</option></select></div></div><div id="rep"><img src="${LOGO}" alt="SWICO" style="height:44px;display:block;margin:4px 0">${R.sec==='pr'?repPR():R.sec==='st'?repST():repIT()}</div>`}
 function repPR(){const P=S.pr.filter(p=>inR(reqDate(p))),pays=S.pr.filter(p=>inR(p.payDate)),ss=P.filter(p=>p.method==='Sole Sourcing');
  const od=S.pr.filter(p=>p.stage==='LPO Issued'&&p.lpoDate&&new Date(p.lpoDate).getTime()+(+p.days||0)*864e5<Date.now());
  const inv=sumBy(P,p=>p.invoiced),pd=sumBy(P,p=>p.paid);
